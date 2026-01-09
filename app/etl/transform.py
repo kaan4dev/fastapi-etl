@@ -1,38 +1,27 @@
-import pandas as pd
-from app.schemas import CryptoPriceDQ
 from pydantic import ValidationError
+import pandas as pd
+from app.schemas_etl import CryptoPriceIn
 
 def transform_coins(raw: list[dict]) -> pd.DataFrame:
-    df = pd.DataFrame(raw)
-    keep = df[["id", "symbol", "name", "current_price", "market_cap", "last_updated"]].copy()
-    keep.rename(
-        columns={
-            "id": "coin_id",
-            "current_price": "price_usd",
-            "market_cap": "market_cap_usd",
-            "last_updated": "updated_at_iso",
-        },
-        inplace=True,
-    )
-    keep["symbol"] = keep["symbol"].str.upper()
-    keep["price_usd"] = keep["price_usd"].astype(float)
-    return keep
-
-def validate_with_pydantic(df):
+    rows = []
     errors = []
 
-    for i, row in df.iterrows():
+    for item in raw:
         try:
-            CryptoPriceDQ(**row.to_dict())
+            row = CryptoPriceIn(
+                coin_id=item["id"],
+                symbol=item["symbol"].upper(),
+                name=item["name"],
+                price_usd=float(item["current_price"]),
+                market_cap_usd=item.get("market_cap"),
+                updated_at_iso=item.get("last_updated") or "",
+            )
+            rows.append(row.model_dump())
         except ValidationError as e:
-            errors.append(f"Row {i}: {e.errors()}")
+            errors.append(e.errors())
 
     if errors:
-        raise ValueError(" | ".join(errors))
+        # In real projects: log this, or raise a custom error with context.
+        raise ValueError(f"Validation failed for {len(errors)} rows")
 
-def validate_dataset_level(df):
-    if df.empty:
-        raise ValueError("Dataset is empty")
-
-    if df["coin_id"].duplicated().any():
-        raise ValueError("Duplicate coin_id values found")
+    return pd.DataFrame(rows)
