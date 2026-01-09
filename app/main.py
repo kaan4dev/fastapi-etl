@@ -1,19 +1,13 @@
 from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 from datetime import datetime, timezone
+from typing import Optional
+from sqlalchemy import select
 
-from app.db import SessionLocal
-from app.db import Base, engine, get_db
-from app.models import ETLRun
-from app.schemas import RunRequest, RunResponse, RunStatusResponse
+from app.db import Base, engine, get_db, SessionLocal
+from app.models import ETLRun, CryptoPrice
+from app.schemas import RunRequest, RunResponse, RunStatusResponse, CryptoPriceOut
 from app.etl.pipeline import run_pipeline
-
-def run_pipeline(db: Session, top_n: int) -> int:
-    raw = extract_top_coins(top_n=top_n)
-    df = transform_coins(raw)
-    inserted = load_crypto_prices(db, df)
-    return inserted
 
 app = FastAPI(title = "FastAPI ETL Service", version = "1.0.0") 
 
@@ -29,21 +23,24 @@ def _execute_run(run_id: int, top_n: int):
     db = SessionLocal()
     try:
         run = db.get(ETLRun, run_id)
+        if not run:
+            return
         run.status = "RUNNING"
-        run_started_at = datetime.now(timezone.utc)
+        run.started_at = datetime.now(timezone.utc)
         db.commit()
 
-        inserted = run_pipeline(db=db, top_n = top_n)
+        upserted, history_inserted = run_pipeline(db=db, top_n=top_n, run_id=run_id)
 
         run.status = "SUCCESS"
-        run.message = f"Loaded {inserted} rows into cryto.prices."
+        run.message = f"Upserted {upserted} rows into crypto_prices. Inserted {history_inserted} rows into crypto_prices_history."
         run.finished_at = datetime.now(timezone.utc)
+        db.commit()
     except Exception as e:
         run = db.get(ETLRun, run_id)
         if run:
             run.status = "FAILED"
             run.message = str(e)[:480]
-            run_finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(timezone.utc)
             db.commit()
     finally:
         db.close()
@@ -69,3 +66,21 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         status = run.status,
         message = run.message,
     )
+
+@app.get("/prices", response_model=list[CryptoPriceOut])
+def list_prices(
+    limit: int = 50,
+    coin_id: Optional[str] = None,
+    symbol: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    limit = max(1, min(limit, 250))
+    stmt = select(CryptoPrice)
+
+    if coin_id:
+        stmt = stmt.where(CryptoPrice.coin_id == coin_id)
+    if symbol:
+        stmt = stmt.where(CryptoPrice.symbol == symbol.upper())
+
+    stmt = stmt.order_by(CryptoPrice.market_cap_usd.desc().nullslast()).limit(limit)
+    return db.execute(stmt).scalars().all()

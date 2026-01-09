@@ -14,3 +14,11 @@ class RunStatusResponse(BaseModel):
     job_name: str
     status: Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
     message: Optional[str] = None
+
+class CryptoPriceOut(BaseModel):
+    coin_id: str
+    symbol: str
+    name: str
+    price_usd: float
+    market_cap_usd: Optional[float] = None
+    updated_at_iso: str
