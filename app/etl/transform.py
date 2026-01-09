@@ -1,16 +1,18 @@
 from pydantic import ValidationError
 import pandas as pd
 from app.schemas_etl import CryptoPriceIn
+import json
 
 def transform_coins(raw: list[dict]) -> pd.DataFrame:
     rows = []
     errors = []
+    max_samples = 3
 
-    for item in raw:
+    for i, item in enumerate(raw):
         try:
             row = CryptoPriceIn(
                 coin_id=item["id"],
-                symbol=item["symbol"].upper(),
+                symbol=item["symbol"],
                 name=item["name"],
                 price_usd=float(item["current_price"]),
                 market_cap_usd=item.get("market_cap"),
@@ -18,10 +20,21 @@ def transform_coins(raw: list[dict]) -> pd.DataFrame:
             )
             rows.append(row.model_dump())
         except ValidationError as e:
-            errors.append(e.errors())
+            if len(errors) < max_samples:
+                errors.append(
+                    {
+                        "index": i,
+                        "coin_id": item.get("id"),
+                        "errors": e.errors(),
+                    }
+                )
 
     if errors:
-        # In real projects: log this, or raise a custom error with context.
-        raise ValueError(f"Validation failed for {len(errors)} rows")
+        error_report = {
+            "error_type": "VALIDATION_ERROR",
+            "error_count": len(errors),
+            "error_samples": errors,
+        }
+        raise ValueError(json.dumps(error_report, ensure_ascii=True))
 
     return pd.DataFrame(rows)
