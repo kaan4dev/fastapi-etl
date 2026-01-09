@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional
 from datetime import datetime
 
@@ -30,3 +30,18 @@ class CryptoPriceHistoryOut(BaseModel):
     price_usd: float
     market_cap_usd: Optional[float] = None
     captured_at: datetime
+
+class CryptoPriceDQ(BaseModel):
+    coin_id: str
+    symbol: str
+    name: str
+    price_usd: float
+    market_cap_usd: Optional[float] = None
+    updated_at_iso: str
+
+    @field_validator("price_usd")
+    @classmethod
+    def price_must_be_positive(cls, v: float):
+        if v <= 0:
+            raise ValueError("price_usd must be > 0")
+        return v
