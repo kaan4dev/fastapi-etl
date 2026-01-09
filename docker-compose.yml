@@ -4,11 +4,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: etl
-      DB_USER: etl
-      DB_PASSWORD: etl
+      ETL_DB_HOST: postgres
+      ETL_DB_PORT: "5432"
+      ETL_DB_NAME: etl
+      ETL_DB_USER: etl
+      ETL_DB_PASSWORD: etl
     depends_on:
       postgres:
         condition: service_healthy
