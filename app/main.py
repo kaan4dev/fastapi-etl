@@ -5,8 +5,8 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.db import Base, engine, get_db, SessionLocal
-from app.models import ETLRun, CryptoPrice
-from app.schemas import RunRequest, RunResponse, RunStatusResponse, CryptoPriceOut
+from app.models import ETLRun, CryptoPrice, CryptoPriceHistory
+from app.schemas import RunRequest, RunResponse, RunStatusResponse, CryptoPriceOut, CryptoPriceHistoryOut
 from app.etl.pipeline import run_pipeline
 
 app = FastAPI(title = "FastAPI ETL Service", version = "1.0.0") 
@@ -83,4 +83,21 @@ def list_prices(
         stmt = stmt.where(CryptoPrice.symbol == symbol.upper())
 
     stmt = stmt.order_by(CryptoPrice.market_cap_usd.desc().nullslast()).limit(limit)
+    return db.execute(stmt).scalars().all()
+
+@app.get("/history/{coin_id}", response_model=list[CryptoPriceHistoryOut])
+def get_price_history(
+    coin_id: str,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    limit = max(1, min(limit, 1000))
+
+    stmt = (
+        select(CryptoPriceHistory)
+        .where(CryptoPriceHistory.coin_id == coin_id)
+        .order_by(CryptoPriceHistory.captured_at.desc())
+        .limit(limit)
+    )
+
     return db.execute(stmt).scalars().all()
