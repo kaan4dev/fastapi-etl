@@ -3,6 +3,50 @@ import pandas as pd
 from app.schemas_etl import CryptoPriceIn
 import json
 
+
+def run_dq_checks(df: pd.DataFrame) -> dict:
+    report = {"issues": [], "summary": {}}
+
+    required_cols = ["coin_id", "symbol", "name", "price_usd", "updated_at_iso"]
+    missing_required = {
+        col: int(df[col].isna().sum())
+        for col in required_cols
+        if col in df.columns
+    }
+
+    if any(v > 0 for v in missing_required.values()):
+        report["issues"].append(
+            {"type": "null_required", "detail": missing_required}
+        )
+
+    if "price_usd" in df.columns:
+        bad_price = int((df["price_usd"] <= 0).sum())
+        if bad_price:
+            report["issues"].append(
+                {"type": "range_price_usd", "detail": {"bad_count": bad_price}}
+            )
+
+    if "market_cap_usd" in df.columns:
+        bad_mcap = int((df["market_cap_usd"] < 0).sum())
+        if bad_mcap:
+            report["issues"].append(
+                {"type": "range_market_cap_usd", "detail": {"bad_count": bad_mcap}}
+            )
+
+    if "coin_id" in df.columns:
+        dup_count = int(df["coin_id"].duplicated().sum())
+        if dup_count:
+            report["issues"].append(
+                {"type": "duplicate_coin_id", "detail": {"dup_count": dup_count}}
+            )
+
+    report["summary"] = {
+        "rows": int(len(df)),
+        "issues_count": len(report["issues"]),
+    }
+    return report
+
+
 def transform_coins(raw: list[dict]) -> pd.DataFrame:
     rows = []
     errors = []
@@ -37,4 +81,9 @@ def transform_coins(raw: list[dict]) -> pd.DataFrame:
         }
         raise ValueError(json.dumps(error_report, ensure_ascii=True))
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    dq_report = run_dq_checks(df)
+    if dq_report["issues"]:
+        raise ValueError(str(dq_report))
+
+    return df
